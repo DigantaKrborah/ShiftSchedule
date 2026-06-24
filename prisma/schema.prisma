@@ -1,0 +1,93 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Unit {
+  id                     String   @id @default(cuid())
+  name                   String
+  personsPerShift        Int      @default(3)
+  shiftsPerDay           Int      @default(3)
+  weeklyOffDays          Int      @default(1)
+  shiftTimeOverrides     String?  // JSON
+  minRestHours           Int      @default(8)
+  twelveHrFairnessWindow String   @default("CALENDAR_MONTH") // ROLLING_MONTH | CALENDAR_MONTH | YEAR
+  maxConsecutiveWorkDays Int      @default(9)
+  minConsecutiveWorkDays Int      @default(3)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  employees       Employee[]
+  scheduleEntries ScheduleEntry[]
+  feasibilityFlags FeasibilityFlag[]
+}
+
+model Employee {
+  id                 String   @id @default(cuid())
+  unitId             String
+  name               String
+  seniorityIndex     Int
+  competencyLevel    Int      @default(1)
+  doesRotatingShift  Boolean  @default(true)
+  eligibleGShift     Boolean  @default(true)
+  eligibleTwelveHr   Boolean  @default(true)
+  givesLeaveBackup   Boolean  @default(true)
+  cumulative12hrCount Int     @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  unit            Unit            @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  leaveRequests   LeaveRequest[]
+  scheduleEntries ScheduleEntry[]
+
+  @@unique([unitId, seniorityIndex])
+}
+
+model LeaveRequest {
+  id         String   @id @default(cuid())
+  employeeId String
+  startDate  DateTime
+  endDate    DateTime
+  reason     String   @default("")
+  status     String   @default("PLANNED") // PLANNED | EMERGENCY
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+}
+
+model ScheduleEntry {
+  id               String   @id @default(cuid())
+  unitId           String
+  date             DateTime
+  employeeId       String
+  shiftCode        String   // A | B | C | G | D12 | N12 | OFF
+  isManualOverride Boolean  @default(false)
+  notes            String   @default("")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  unit     Unit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([unitId, date, employeeId])
+}
+
+model FeasibilityFlag {
+  id         String   @id @default(cuid())
+  unitId     String
+  date       DateTime
+  level      String   @default("OK") // OK | TIGHT | INFEASIBLE
+  message    String   @default("")
+  suggestion String   @default("{}") // JSON
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  unit Unit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@unique([unitId, date])
+}

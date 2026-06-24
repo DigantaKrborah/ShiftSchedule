@@ -1,0 +1,25 @@
+# dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# TypeScript incremental cache
+tsconfig.tsbuildinfo
+
+# SQLite database (seed to recreate)
+prisma/dev.db
+prisma/dev.db-journal
+prisma/*.db-wal
+prisma/*.db-shm
+
+# Environment variables (machine-specific — see .env.example)
+.env
+.env.local
+.env.*.local
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
