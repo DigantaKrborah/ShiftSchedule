@@ -4,6 +4,7 @@
  */
 
 import type {
+  AbsentEntry,
   EngineEmployee,
   EngineResult,
   FeasibilityFlag,
@@ -48,11 +49,18 @@ export function generateSchedule(
   // 2. Apply surplus G shifts
   applySurplusGShifts(rotation, emps, config, startDate, endDate);
 
-  // 3. Apply leaves (mark absent employees)
+  // 3. Apply leaves (mark absent employees) and record original shifts
+  // If the rotation already says OFF (natural rest day), keep OFF.
+  // If they would have been working, mark as L and record the vacated shift.
+  const absentByDate = new Map<string, AbsentEntry[]>(); // date → absent entries
   for (const date of dates) {
     for (const emp of emps) {
       if (isInLeave(date, leaves, emp.id)) {
-        rotation.get(emp.id)?.set(date, "OFF"); // temporary marker — will be replaced
+        const baseShift = rotation.get(emp.id)?.get(date);
+        if (baseShift === "OFF") continue; // natural rest day — leave doesn't vacate a shift
+        rotation.get(emp.id)?.set(date, "L");
+        if (!absentByDate.has(date)) absentByDate.set(date, []);
+        absentByDate.get(date)!.push({ empId: emp.id, name: emp.name, originalShift: baseShift! });
       }
     }
   }
@@ -86,20 +94,9 @@ export function generateSchedule(
       if (shift) dayAssignments.set(emp.id, shift);
     }
 
-    // Mark absent employees clearly (they show as "OFF" in dayAssignments from step 3)
-    // But we need to know WHO is absent vs. genuinely OFF for coverage logic.
-    // Re-mark: an employee is "absent" if they have a leave entry for this date.
-    const absentIds = new Set(
-      emps.filter((e) => isInLeave(date, leaves, e.id)).map((e) => e.id)
-    );
-
-    // For coverage, we temporarily set absent employees to a "no-show" marker.
-    // The rotation gave them OFF — we keep that and let coverAbsences figure out the gap.
-    // Actually coverAbsences works by detecting which rotating shifts are under pps.
-    // Absent employees are already set to OFF above (they vacate the rotating shift).
-
     const prevDay = prevDate ? prevDayMap.get(prevDate) : undefined;
-    const flag = coverAbsences(date, dayAssignments, emps, prevDay, config, config.id);
+    const absentEntries = absentByDate.get(date) ?? [];
+    const flag = coverAbsences(date, dayAssignments, emps, prevDay, config, config.id, absentEntries);
     if (flag) flags.push(flag);
 
     // Write back the (possibly updated) assignments to rotation
@@ -108,7 +105,6 @@ export function generateSchedule(
     }
 
     prevDayMap.set(date, new Map(dayAssignments));
-    void absentIds;
   }
 
   // 6. Flatten to ScheduleCell[]

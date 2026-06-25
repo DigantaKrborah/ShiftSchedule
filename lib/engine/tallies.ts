@@ -16,6 +16,7 @@ export function computeTallies(
     const sh = cell.shiftCode as ShiftCode;
     switch (sh) {
       case "OFF": t.offDays++; break;
+      case "L":   break; // leave day — neither rest nor work hours
       case "D12": t.d12Count++; t.totalHours += 12; break;
       case "N12": t.n12Count++; t.totalNights++; t.totalHours += 12; break;
       case "C":   t.totalNights++; t.totalHours += 8; break;

@@ -38,6 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
 
     const engineEmployees = employees.map((e) => ({
       id: e.id,
+      name: e.name,
       seniorityIndex: e.seniorityIndex,
       doesRotatingShift: e.doesRotatingShift,
       eligibleGShift: e.eligibleGShift,
@@ -118,6 +119,21 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
           suggestion: JSON.stringify(flag.suggestion),
         })),
       });
+    }
+
+    // Persist per-employee tallies back to the Employee table
+    if (result.tallies.length > 0) {
+      await Promise.all(
+        result.tallies.map((t) =>
+          prisma.employee.update({
+            where: { id: t.employeeId },
+            data: {
+              cumulativeOffDays:   { increment: t.offDays },
+              cumulative12hrCount: { increment: t.d12Count + t.n12Count },
+            },
+          })
+        )
+      );
     }
 
     return NextResponse.json({

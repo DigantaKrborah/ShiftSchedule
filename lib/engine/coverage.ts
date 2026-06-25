@@ -6,6 +6,7 @@
  */
 
 import type {
+  AbsentEntry,
   EngineEmployee,
   FeasibilityFlag,
   FeasibilityLevel,
@@ -40,7 +41,7 @@ export function verifyHourlyCoverage(
   const coverCount = new Array(24).fill(0);
 
   for (const [, shift] of assignments) {
-    if (shift === "OFF" || shift === "G") continue;
+    if (shift === "OFF" || shift === "G" || shift === "L") continue;
     const hours = getShiftHours(shift, shiftTimes);
     for (const h of hours) coverCount[h]++;
   }
@@ -57,7 +58,8 @@ export function verifyHourlyCoverage(
 /**
  * Apply absence coverage for a single date.
  * Mutates `assignments` in place.
- * Returns a FeasibilityFlag if the date is TIGHT or INFEASIBLE.
+ * Returns a FeasibilityFlag (INFO for covered absences, TIGHT/INFEASIBLE for shortfalls).
+ * Returns null only when there are no absences at all.
  */
 export function coverAbsences(
   date: string,
@@ -65,45 +67,52 @@ export function coverAbsences(
   employees: EngineEmployee[],
   prevDayAssignments: Map<string, ShiftCode> | undefined,
   config: UnitConfig,
-  unitId: string
+  unitId: string,
+  absentEntries: AbsentEntry[] = []
 ): FeasibilityFlag | null {
   const shiftTimes = { ...DEFAULT_SHIFT_TIMES, ...(config.shiftTimes ?? {}) };
   const pps = config.personsPerShift;
 
-  // Determine which employees are absent (their shift was replaced with a leave marker)
-  // We receive assignments already with absent employees removed (they won't appear, or appear as special value)
-  // Actually, absent employees are those with shiftCode not covering their expected slot.
-  // Strategy: count per rotating shift (A, B, C), find which is short.
-
-  const shiftBuckets: Record<string, string[]> = { A: [], B: [], C: [], G: [], D12: [], N12: [], OFF: [] };
+  const shiftBuckets: Record<string, string[]> = { A: [], B: [], C: [], G: [], D12: [], N12: [], OFF: [], L: [] };
   for (const [empId, shift] of assignments) {
     if (shiftBuckets[shift]) shiftBuckets[shift].push(empId);
   }
 
-  const rotatingShifts: ShiftCode[] = ["A", "B", "C"];
+  const rotatingShifts: ShiftCode[] = config.shiftsPerDay === 2 ? ["A", "B"] : ["A", "B", "C"];
   const shortShifts = rotatingShifts.filter((sh) => shiftBuckets[sh].length < pps);
 
-  if (shortShifts.length === 0) return null; // fully staffed
+  // No absences at all — fully staffed with no leave
+  if (shortShifts.length === 0 && absentEntries.length === 0) return null;
 
-  const flags: string[] = [];
-  let feasLevel: FeasibilityLevel = "OK";
+  // Build a lookup: original shift → absent employee for labelling messages
+  const absentByShift = new Map<ShiftCode, AbsentEntry>();
+  for (const entry of absentEntries) {
+    absentByShift.set(entry.originalShift, entry);
+  }
+
+  const msgParts: string[] = [];
+  let feasLevel: FeasibilityLevel = shortShifts.length === 0 ? "INFO" : "OK";
+
+  // Track newly assigned D12/N12 during this call for reporting
+  const newD12: string[] = [];
+  const newN12: string[] = [];
 
   for (const absentShift of shortShifts) {
     const deficit = pps - shiftBuckets[absentShift].length;
+    const absentEmp = absentByShift.get(absentShift);
+    const absentLabel = absentEmp
+      ? `${absentEmp.name ?? absentEmp.empId} (${absentShift})`
+      : `${absentShift} shift`;
 
     for (let attempt = 0; attempt < deficit; attempt++) {
       // Step 1: Try relief/G person
       const relieved = tryReliefCover(
-        date,
-        absentShift,
-        assignments,
-        employees,
-        prevDayAssignments,
-        config.minRestHours,
-        shiftTimes
+        date, absentShift, assignments, employees, prevDayAssignments, config.minRestHours, shiftTimes
       );
-
       if (relieved) {
+        const emp = employees.find((e) => e.id === relieved);
+        msgParts.push(`${absentLabel} on leave — relief: ${emp?.name ?? relieved}`);
+        feasLevel = feasLevel === "OK" ? "INFO" : feasLevel;
         shiftBuckets[absentShift].push(relieved);
         continue;
       }
@@ -112,31 +121,52 @@ export function coverAbsences(
       const pair = TWELVE_HR_PAIR[absentShift];
       if (!pair) {
         feasLevel = "INFEASIBLE";
-        flags.push(`No 12-hr pair defined for absent shift ${absentShift}`);
+        msgParts.push(`${absentLabel} on leave — no 12hr pair defined`);
         continue;
       }
 
+      const d12Before = [...assignments].filter(([, s]) => s === "D12").map(([id]) => id);
+      const n12Before = [...assignments].filter(([, s]) => s === "N12").map(([id]) => id);
+
       const twelveHrApplied = tryTwelveHrPair(
-        date,
-        absentShift,
-        assignments,
-        employees,
-        prevDayAssignments,
-        config,
-        shiftTimes,
-        shiftBuckets
+        date, absentShift, assignments, employees, prevDayAssignments, config, shiftTimes, shiftBuckets
       );
 
       if (twelveHrApplied) {
-        shiftBuckets[absentShift].push("D12_COVERED" as ShiftCode); // marker
+        // Find who was newly assigned
+        const d12After = [...assignments].filter(([, s]) => s === "D12").map(([id]) => id);
+        const n12After = [...assignments].filter(([, s]) => s === "N12").map(([id]) => id);
+        const d12New = d12After.filter((id) => !d12Before.includes(id));
+        const n12New = n12After.filter((id) => !n12Before.includes(id));
+        newD12.push(...d12New);
+        newN12.push(...n12New);
+
+        const d12Name = d12New.map((id) => employees.find((e) => e.id === id)?.name ?? id).join(", ");
+        const n12Name = n12New.map((id) => employees.find((e) => e.id === id)?.name ?? id).join(", ");
+        msgParts.push(`${absentLabel} on leave — D12: ${d12Name || "?"}, N12: ${n12Name || "?"}`);
+        feasLevel = feasLevel === "OK" ? "INFO" : feasLevel;
+        shiftBuckets[absentShift].push("D12_COVERED" as ShiftCode);
         continue;
       }
 
-      // Step 3: Flag
+      // Step 3: Could not cover
       feasLevel = feasLevel === "INFEASIBLE" ? "INFEASIBLE" : "TIGHT";
-      flags.push(`Unable to fully cover absent ${absentShift} shift — short by ${deficit - attempt} person(s)`);
+      const d12Name = newD12.map((id) => employees.find((e) => e.id === id)?.name ?? id).join(", ");
+      const n12Name = newN12.map((id) => employees.find((e) => e.id === id)?.name ?? id).join(", ");
+      const partial = d12Name || n12Name
+        ? ` (partial: D12→${d12Name || "none"}, N12→${n12Name || "none"})`
+        : "";
+      msgParts.push(`${absentLabel} on leave — unable to cover, short by ${deficit - attempt}${partial}`);
       break;
     }
+  }
+
+  // If absences existed but all shifts were already met (e.g., surplus unit), still emit INFO
+  if (absentEntries.length > 0 && msgParts.length === 0) {
+    for (const entry of absentEntries) {
+      msgParts.push(`${entry.name ?? entry.empId} (${entry.originalShift}) on leave — no coverage needed`);
+    }
+    feasLevel = "INFO";
   }
 
   if (feasLevel === "OK") return null;
@@ -146,7 +176,7 @@ export function coverAbsences(
     unitId,
     date,
     level: feasLevel,
-    message: flags.join("; "),
+    message: msgParts.join(" | "),
     suggestion,
   };
 }
@@ -167,7 +197,7 @@ function tryReliefCover(
     if (!e.givesLeaveBackup) return false;
     // Rest check: previous day's shift
     const prev = prevDay?.get(e.id);
-    if (prev && prev !== "OFF") {
+    if (prev && prev !== "OFF" && prev !== "L") {
       if (!hasEnoughRest(prev, absentShift, minRestHours, shiftTimes)) return false;
     }
     return true;
@@ -200,7 +230,7 @@ function tryTwelveHrPair(
     if (!e.eligibleTwelveHr) return false;
     if (assignments.get(e.id) !== pair.d12From) return false;
     const prev = prevDay?.get(e.id);
-    if (prev && prev !== "OFF") {
+    if (prev && prev !== "OFF" && prev !== "L") {
       if (!hasEnoughRest(prev, "D12", config.minRestHours, shiftTimes)) return false;
     }
     return true;
@@ -211,7 +241,7 @@ function tryTwelveHrPair(
     if (!e.eligibleTwelveHr) return false;
     if (assignments.get(e.id) !== pair.n12From) return false;
     const prev = prevDay?.get(e.id);
-    if (prev && prev !== "OFF") {
+    if (prev && prev !== "OFF" && prev !== "L") {
       if (!hasEnoughRest(prev, "N12", config.minRestHours, shiftTimes)) return false;
     }
     return true;

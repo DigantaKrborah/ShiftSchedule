@@ -9,6 +9,7 @@ export function TabNav({ unitId }: { unitId: string }) {
     { href: `/units/${unitId}/schedule`, label: "Schedule" },
     { href: `/units/${unitId}/employees`, label: "Employees" },
     { href: `/units/${unitId}/leaves`, label: "Leaves" },
+    { href: `/units/${unitId}/reports`, label: "Reports" },
     { href: `/units/${unitId}/settings`, label: "Settings" },
   ];
 

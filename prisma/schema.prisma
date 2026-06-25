@@ -21,9 +21,11 @@ model Unit {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
-  employees       Employee[]
-  scheduleEntries ScheduleEntry[]
-  feasibilityFlags FeasibilityFlag[]
+  employees          Employee[]
+  scheduleEntries    ScheduleEntry[]
+  feasibilityFlags   FeasibilityFlag[]
+  finalizedSchedules FinalizedSchedule[]
+  users              User[]
 }
 
 model Employee {
@@ -37,6 +39,7 @@ model Employee {
   eligibleTwelveHr   Boolean  @default(true)
   givesLeaveBackup   Boolean  @default(true)
   cumulative12hrCount Int     @default(0)
+  cumulativeOffDays   Int     @default(0)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -90,4 +93,36 @@ model FeasibilityFlag {
   unit Unit @relation(fields: [unitId], references: [id], onDelete: Cascade)
 
   @@unique([unitId, date])
+}
+
+model FinalizedSchedule {
+  id          String   @id @default(cuid())
+  unitId      String
+  startDate   DateTime
+  endDate     DateTime
+  label       String   @default("")
+  finalizedAt DateTime @default(now())
+  snapshot    String   // JSON: { employees, cells, flags, tallies }
+
+  unit Unit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id        String    @id @default(cuid())
+  username  String    @unique
+  password  String
+  role      String    @default("UNIT_USER")   // ADMIN | UNIT_USER
+  unitId    String?
+  unit      Unit?     @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  sessions  Session[]
+  createdAt DateTime  @default(now())
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }

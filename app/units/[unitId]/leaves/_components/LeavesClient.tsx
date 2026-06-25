@@ -38,6 +38,15 @@ export function LeavesClient({
     status: "PLANNED" as "PLANNED" | "EMERGENCY",
   });
 
+  // Feature 1 — Leave impact analysis
+  const [impactLoading, setImpactLoading] = useState(false);
+  const [impactResult, setImpactResult] = useState<{
+    risk: "Low" | "Medium" | "High";
+    headline: string;
+    details: string;
+    recommendation: string;
+  } | null>(null);
+
   function openAdd() {
     setForm({
       employeeId: employees[0]?.id ?? "",
@@ -47,7 +56,29 @@ export function LeavesClient({
       status: "PLANNED",
     });
     setError("");
+    setImpactResult(null);
     setShowForm(true);
+  }
+
+  async function handleAnalyzeImpact() {
+    setImpactLoading(true);
+    setImpactResult(null);
+    try {
+      const res = await fetch(`/api/units/${unitId}/ai/leave-impact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeId: form.employeeId,
+          startDate: form.startDate,
+          endDate: form.endDate,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error ?? "Analysis failed"); return; }
+      setImpactResult(data);
+    } finally {
+      setImpactLoading(false);
+    }
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -191,6 +222,41 @@ export function LeavesClient({
               />
             </div>
           </div>
+
+          {/* AI — Leave Impact Analysis */}
+          {form.employeeId && form.startDate && form.endDate && (
+            <div className="border border-purple-200 rounded-lg p-3 bg-purple-50/50">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-purple-700 uppercase tracking-wide">
+                  ✦ AI Coverage Impact
+                </span>
+                <button
+                  type="button"
+                  onClick={handleAnalyzeImpact}
+                  disabled={impactLoading}
+                  className="text-xs bg-purple-700 text-white px-3 py-1 rounded-md hover:bg-purple-600 disabled:opacity-50 transition-colors"
+                >
+                  {impactLoading ? "Analysing…" : "Analyse Impact"}
+                </button>
+              </div>
+              {impactResult && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                      impactResult.risk === "High"   ? "bg-red-100 text-red-800" :
+                      impactResult.risk === "Medium" ? "bg-yellow-100 text-yellow-800" :
+                                                       "bg-green-100 text-green-800"
+                    }`}>
+                      {impactResult.risk === "High" ? "🔴" : impactResult.risk === "Medium" ? "🟡" : "🟢"} {impactResult.risk} Risk
+                    </span>
+                    <span className="text-xs text-gray-700 font-medium">{impactResult.headline}</span>
+                  </div>
+                  <p className="text-xs text-gray-600">{impactResult.details}</p>
+                  <p className="text-xs text-purple-800 font-medium">→ {impactResult.recommendation}</p>
+                </div>
+              )}
+            </div>
+          )}
 
           {error && <p className="text-red-600 text-sm">{error}</p>}
 

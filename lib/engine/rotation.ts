@@ -9,6 +9,8 @@ import type { EngineEmployee, ShiftCode, UnitConfig } from "./types";
 import { dateRange } from "./dates";
 
 const BASE_CYCLE: ShiftCode[] = ["B", "B", "A", "A", "C", "C", "OFF"];
+// 2-shift variant: 3 days A + 3 days B + 1 OFF (no C shift)
+const TWO_SHIFT_CYCLE: ShiftCode[] = ["A", "A", "A", "B", "B", "B", "OFF"];
 
 /**
  * Assigns phase offsets to employees so that each day has exactly `personsPerShift`
@@ -52,13 +54,8 @@ export function buildBaseRotation(
 
   if (N === 0) return schedule;
 
-  // Compute phase offsets
-  // Standard approach: divide employees into groups of personsPerShift; each group
-  // is phase-shifted by 7/(personsPerShift) days — using integer offsets by cycling:
-  // group i gets offset = i * 7 / personsPerShift
-  // But since we need integer day offsets, we space them as evenly as possible.
-  // Phase offset for employee i: floor(i * 7 / pps)
-  // This ensures that on each day in the 7-day cycle, exactly pps employees are on the same shift phase.
+  // Choose cycle based on how many shifts this unit runs
+  const baseCycle = config.shiftsPerDay === 2 ? TWO_SHIFT_CYCLE : BASE_CYCLE;
 
   // Build the "effective cycle length" = 7 (one OFF per 7 days).
   const cycleLength = 7;
@@ -75,7 +72,7 @@ export function buildBaseRotation(
       const d = new Date(date + "T00:00:00");
       const dayIndex = Math.floor((d.getTime() - epoch.getTime()) / 86400000);
       const cycleDay = ((dayIndex - phaseOffset) % cycleLength + cycleLength) % cycleLength;
-      empSchedule.set(date, BASE_CYCLE[cycleDay]);
+      empSchedule.set(date, baseCycle[cycleDay]);
     }
   }
 
@@ -120,7 +117,7 @@ export function applySurplusGShifts(
   for (const date of dates) {
     // Count how many are on each rotating shift
     const counts: Record<ShiftCode, string[]> = {
-      A: [], B: [], C: [], G: [], D12: [], N12: [], OFF: [],
+      A: [], B: [], C: [], G: [], D12: [], N12: [], OFF: [], L: [],
     };
 
     for (const emp of employees) {
@@ -129,7 +126,7 @@ export function applySurplusGShifts(
     }
 
     // For each rotating shift that is over-staffed, move surplus to G
-    const rotatingShifts: ShiftCode[] = ["A", "B", "C"];
+    const rotatingShifts: ShiftCode[] = config.shiftsPerDay === 2 ? ["A", "B"] : ["A", "B", "C"];
     for (const sh of rotatingShifts) {
       const onShift = counts[sh];
       if (onShift.length <= pps) continue;

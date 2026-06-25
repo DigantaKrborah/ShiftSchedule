@@ -25,7 +25,7 @@ export function hasEnoughRest(
   minRestHours: number,
   times: Record<ShiftCode, ShiftTime> = DEFAULT_SHIFT_TIMES
 ): boolean {
-  if (prevShift === "OFF" || nextShift === "OFF") return true;
+  if (prevShift === "OFF" || prevShift === "L" || nextShift === "OFF" || nextShift === "L") return true;
 
   const prevTime = times[prevShift];
   const nextTime = times[nextShift];
@@ -68,6 +68,6 @@ export function forbiddenNextDayShifts(
   minRestHours: number,
   times: Record<ShiftCode, ShiftTime> = DEFAULT_SHIFT_TIMES
 ): ShiftCode[] {
-  const all: ShiftCode[] = ["A", "B", "C", "G", "D12", "N12", "OFF"];
-  return all.filter((s) => s !== "OFF" && !hasEnoughRest(prevShift, s, minRestHours, times));
+  const all: ShiftCode[] = ["A", "B", "C", "G", "D12", "N12", "OFF", "L"];
+  return all.filter((s) => s !== "OFF" && s !== "L" && !hasEnoughRest(prevShift, s, minRestHours, times));
 }

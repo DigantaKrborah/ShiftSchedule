@@ -17,6 +17,7 @@ const config: Config = {
         "shift-d12": "#fed7aa",
         "shift-n12": "#fecaca",
         "shift-off": "#f3f4f6",
+        "shift-l":   "#fbcfe8",
       },
     },
   },

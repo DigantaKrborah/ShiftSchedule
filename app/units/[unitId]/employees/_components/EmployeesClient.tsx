@@ -224,6 +224,7 @@ export function EmployeesClient({
                 <th className="text-center px-3 py-2.5 font-semibold text-gray-700">12hr</th>
                 <th className="text-center px-3 py-2.5 font-semibold text-gray-700">Leave Backup</th>
                 <th className="text-center px-3 py-2.5 font-semibold text-gray-700">12hr Count</th>
+                <th className="text-center px-3 py-2.5 font-semibold text-gray-700">Off Days</th>
                 <th className="px-4 py-2.5"></th>
               </tr>
             </thead>
@@ -241,6 +242,9 @@ export function EmployeesClient({
                   <td className="px-3 py-2.5 text-center">{bool(emp.givesLeaveBackup)}</td>
                   <td className="px-3 py-2.5 text-center text-gray-600">
                     {emp.cumulative12hrCount}
+                  </td>
+                  <td className="px-3 py-2.5 text-center text-gray-600">
+                    {emp.cumulativeOffDays}
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     <button

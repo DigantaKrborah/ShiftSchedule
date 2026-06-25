@@ -8,6 +8,7 @@ const STYLES: Record<ShiftCode, string> = {
   D12: "bg-[#fed7aa] text-orange-900",
   N12: "bg-[#fecaca] text-red-900",
   OFF: "bg-[#f3f4f6] text-gray-500",
+  L:   "bg-[#fbcfe8] text-pink-900",
 };
 
 export default function ShiftBadge({

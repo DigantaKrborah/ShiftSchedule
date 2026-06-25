@@ -1,8 +1,8 @@
 // Pure engine types — no DB or React imports
 
-export type ShiftCode = "A" | "B" | "C" | "G" | "D12" | "N12" | "OFF";
+export type ShiftCode = "A" | "B" | "C" | "G" | "D12" | "N12" | "OFF" | "L";
 
-export type FeasibilityLevel = "OK" | "TIGHT" | "INFEASIBLE";
+export type FeasibilityLevel = "OK" | "INFO" | "TIGHT" | "INFEASIBLE";
 
 export interface ShiftTime {
   code: ShiftCode;
@@ -19,11 +19,12 @@ export const DEFAULT_SHIFT_TIMES: Record<ShiftCode, ShiftTime> = {
   D12: { code: "D12", startHour: 6,  endHour: 18, durationHours: 12 },
   N12: { code: "N12", startHour: 18, endHour: 6,  durationHours: 12 },
   OFF: { code: "OFF", startHour: 0,  endHour: 0,  durationHours: 0 },
+  L:   { code: "L",   startHour: 0,  endHour: 0,  durationHours: 0 },
 };
 
 /** Clock hours covered by a shift (for hour-by-hour coverage checks). */
 export function getShiftHours(shift: ShiftCode, times: Record<ShiftCode, ShiftTime> = DEFAULT_SHIFT_TIMES): number[] {
-  if (shift === "OFF") return [];
+  if (shift === "OFF" || shift === "L") return [];
   const t = times[shift];
   const hours: number[] = [];
   let h = t.startHour;
@@ -36,12 +37,20 @@ export function getShiftHours(shift: ShiftCode, times: Record<ShiftCode, ShiftTi
 
 export interface EngineEmployee {
   id: string;
-  seniorityIndex: number; // 0 = most senior
+  name?: string;            // optional — used only for flag messages
+  seniorityIndex: number;  // 0 = most senior
   doesRotatingShift: boolean;
   eligibleGShift: boolean;
   eligibleTwelveHr: boolean;
   givesLeaveBackup: boolean;
   cumulative12hrCount: number; // running total, never reset
+}
+
+/** One absence event for a single date — passed to coverAbsences. */
+export interface AbsentEntry {
+  empId: string;
+  name?: string;
+  originalShift: ShiftCode; // the shift they vacated
 }
 
 export interface UnitConfig {
