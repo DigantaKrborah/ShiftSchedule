@@ -226,8 +226,10 @@ the SSR-provided value.
 Relative paths (e.g. `file:./prisma/dev.db`) do not work for the Prisma JS client
 inside Next.js on Windows. Use an absolute path in `.env`:
 ```
-DATABASE_URL="file:E:/ShiftSchedule/prisma/dev.db"
+DATABASE_URL="file:E:/ShiftScheduleApp/prisma/dev.db"
 ```
+The canonical working directory is `E:\ShiftScheduleApp` (cloned from GitHub).
+The old `E:\ShiftSchedule` directory is an incomplete leftover and should be deleted.
 
 ---
 

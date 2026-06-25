@@ -1,6 +1,6 @@
 # Project Status
 
-_Last updated: 2026-06-25 (session 6)_
+_Last updated: 2026-06-25 (session 7)_
 
 ---
 
@@ -181,26 +181,39 @@ The AI pattern analysis route returns HTTP 400 with a clear message if fewer tha
 
 ## How to resume
 
+> **Working directory:** `E:\ShiftScheduleApp`
+> The old `E:\ShiftSchedule` directory is an incomplete leftover from an earlier session and can be deleted.
+
 ```bash
-# 1. Copy and edit .env
+# 1. Clone from GitHub (if starting fresh)
+git clone https://github.com/DigantaKrborah/ShiftSchedule E:\ShiftScheduleApp
+
+# 2. Copy and edit .env
 cp .env.example .env
 # Edit .env:
-#   DATABASE_URL="file:E:/ShiftSchedule/prisma/dev.db"
+#   DATABASE_URL="file:E:/ShiftScheduleApp/prisma/dev.db"
 #   GROQ_API_KEY="gsk_..."   ← free from console.groq.com → API Keys
 
-# 2. Install dependencies
+# 3. Install dependencies
 npm install
 
-# 3. Generate Prisma client
-npm run db:generate
+# 4. Apply migrations
+npx prisma migrate deploy
 
-# 4. Reset and seed test data
+# 5. Seed test data (12 units, ~112 employees, ~26 leaves, 13 users)
 npm run db:seed
 
-# 5. Start dev server
+# 6. Start dev server
 npm run dev
 # → http://localhost:3000
 
-# 6. Verify AI is working
-# Open http://localhost:3000/api/debug-ai — should return {"result":"OK"}
+# 7. Verify AI is working
+# Open http://localhost:3000/api/debug-ai — should return {"result":"OK","aiAvailable":true}
 ```
+
+### Login credentials
+| Username | Password | Access |
+|---|---|---|
+| `admin` | `admin123` | All 12 units (ADMIN) |
+| `hcu` | `password` | HCU only |
+| `h2u` / `cdu` / `vdu` / `msp` / `dcu` / `oms` / `aspu` / `dhdt` / `srb` / `sdu` / `whfu` | `password` | respective unit |
