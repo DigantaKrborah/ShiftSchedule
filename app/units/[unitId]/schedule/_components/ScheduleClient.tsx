@@ -112,7 +112,16 @@ export function ScheduleClient({
 
   // AI — Feature 3: fairness audit
   const [auditLoading, setAuditLoading] = useState(false);
-  const [auditResult, setAuditResult]   = useState("");
+  const [auditResult, setAuditResult]   = useState<{
+    verdict: "Fair" | "Minor Issues" | "Unfair";
+    summary: string;
+    hoursDistribution: string;
+    nightBurden: string;
+    twelveHrDistribution: string;
+    offDayFairness: string;
+    action: string;
+  } | null>(null);
+  const [auditError, setAuditError]     = useState("");
   const [auditModal, setAuditModal]     = useState(false);
 
   // AI — Feature 4: schedule summary (auto-generates finalize label)
@@ -232,7 +241,8 @@ export function ScheduleClient({
   // AI — Feature 3: fairness audit
   async function handleFairnessAudit() {
     setAuditLoading(true);
-    setAuditResult("");
+    setAuditResult(null);
+    setAuditError("");
     setAuditModal(true);
     try {
       const res  = await fetch(`/api/units/${unitId}/ai/fairness-audit`, {
@@ -241,8 +251,8 @@ export function ScheduleClient({
         body: JSON.stringify({ start, end }),
       });
       const data = await res.json();
-      if (!res.ok) { setAuditResult(data.error ?? "Audit failed"); return; }
-      setAuditResult(data.audit);
+      if (!res.ok) { setAuditError(data.error ?? "Audit failed"); return; }
+      setAuditResult(data);
     } finally {
       setAuditLoading(false);
     }
@@ -620,11 +630,41 @@ export function ScheduleClient({
             </div>
             {auditLoading ? (
               <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Analysing shift distribution…</div>
-            ) : (
-              <div className="flex-1 overflow-y-auto text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                {auditResult}
+            ) : auditError ? (
+              <div className="flex-1 flex items-center justify-center text-red-600 text-sm text-center px-4">{auditError}</div>
+            ) : auditResult ? (
+              <div className="flex-1 overflow-y-auto space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap ${
+                    auditResult.verdict === "Unfair"       ? "bg-red-100 text-red-800" :
+                    auditResult.verdict === "Minor Issues" ? "bg-yellow-100 text-yellow-800" :
+                                                              "bg-green-100 text-green-800"
+                  }`}>
+                    {auditResult.verdict === "Unfair" ? "🔴" : auditResult.verdict === "Minor Issues" ? "🟡" : "🟢"} {auditResult.verdict}
+                  </span>
+                  <span className="text-sm text-gray-700 font-medium">{auditResult.summary}</span>
+                </div>
+
+                {[
+                  { icon: "⏱", label: "Hours Distribution", text: auditResult.hoursDistribution },
+                  { icon: "🌙", label: "Night Shift Burden", text: auditResult.nightBurden },
+                  { icon: "⚖", label: "12-hr Duty Distribution", text: auditResult.twelveHrDistribution },
+                  { icon: "📅", label: "Off-day Fairness", text: auditResult.offDayFairness },
+                ].map((s) => (
+                  <div key={s.label} className="bg-purple-50/60 border border-purple-100 rounded-lg px-4 py-2.5">
+                    <p className="text-xs font-semibold text-purple-900 flex items-center gap-1.5 mb-1">
+                      <span>{s.icon}</span> {s.label}
+                    </p>
+                    <p className="text-sm text-gray-700 leading-relaxed">{s.text}</p>
+                  </div>
+                ))}
+
+                <div className="bg-purple-700 text-white rounded-lg px-4 py-2.5">
+                  <p className="text-xs font-semibold flex items-center gap-1.5 mb-1">→ Suggested Action</p>
+                  <p className="text-sm leading-relaxed">{auditResult.action}</p>
+                </div>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       )}

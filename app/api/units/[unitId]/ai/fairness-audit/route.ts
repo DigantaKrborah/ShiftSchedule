@@ -48,7 +48,7 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
     return `${emp?.name ?? t.employeeId} | Hrs:${t.totalHours} | Off:${t.offDays} | D12:${t.d12Count} | N12:${t.n12Count} | Nights:${t.totalNights} | G-days:${t.gDays} | Cumulative12hr:${emp?.cumulative12hrCount ?? "?"}`;
   }).join("\n");
 
-  const prompt = `You are a refinery shift scheduling analyst. Review this shift distribution and produce a fairness audit.
+  const prompt = `You are a refinery shift scheduling analyst. Review this shift distribution and produce a fairness audit. Respond ONLY with a valid JSON object — no markdown, no explanation outside the JSON.
 
 UNIT: ${unit.name}
 PERIOD: ${start} to ${end} (${dayCount} days)
@@ -58,24 +58,34 @@ TALLY DATA:
 Employee | Hours | Off days | D12 duties | N12 duties | Night shifts | G-days | Cumulative 12hr
 ${rows}
 
-Write a concise fairness audit covering:
-1. **Hours distribution** – who has the most/least hours and whether the gap is significant
-2. **Night shift burden** – is night duty (C and N12) spread fairly?
-3. **12-hr duty distribution** – are D12/N12 duties shared equitably across eligible staff?
-4. **Off-day fairness** – any employee with significantly fewer off days than peers?
-5. **Overall verdict** – is the schedule fair, and the single most important corrective action (if any)?
+Respond with exactly this JSON structure (be specific with names and numbers, each field 1-2 sentences):
+{
+  "verdict": "Fair",
+  "summary": "one-sentence overall assessment",
+  "hoursDistribution": "who has the most/least hours and whether the gap is significant",
+  "nightBurden": "is night duty (C and N12) spread fairly?",
+  "twelveHrDistribution": "are D12/N12 duties shared equitably across eligible staff?",
+  "offDayFairness": "any employee with significantly fewer off days than peers?",
+  "action": "the single most important corrective action, or 'None needed' if the schedule is fair"
+}
+verdict must be exactly one of: Fair, Minor Issues, Unfair`;
 
-Be specific with names and numbers. Keep total response under 300 words.`;
-
-  const model = genAI.getGenerativeModel({ model: AI_SMART });
-  let text: string;
+  const model = genAI.getGenerativeModel({
+    model: AI_SMART,
+    generationConfig: { responseMimeType: "application/json" },
+  });
+  let raw: string;
   try {
     const result = await model.generateContent(prompt);
-    text = result.response.text();
+    raw = result.response.text().trim();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: `Gemini API error: ${msg}` }, { status: 500 });
   }
 
-  return NextResponse.json({ audit: text });
+  try {
+    return NextResponse.json(JSON.parse(raw));
+  } catch {
+    return NextResponse.json({ error: "AI returned unexpected format", raw }, { status: 500 });
+  }
 }
