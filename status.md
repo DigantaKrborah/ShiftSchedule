@@ -1,6 +1,39 @@
 # Project Status
 
-_Last updated: 2026-06-25 (session 7)_
+_Last updated: 2026-07-21 (session 9)_
+
+---
+
+## Deployment ✅
+
+**Live at: https://shift-schedule-two.vercel.app**
+
+| Item | Detail |
+|---|---|
+| Platform | Vercel (production) |
+| Database | Neon PostgreSQL (free tier) |
+| AI | Groq LLaMA — verified working |
+| Framework | Next.js 16.2.9 |
+| GitHub | https://github.com/DigantaKrborah/ShiftSchedule |
+
+### Deployment notes (session 8)
+- Migrated database from **SQLite → PostgreSQL** (Neon) for Vercel compatibility
+- Upgraded Next.js **15.2.4 → 16.2.9** (patched CVE-2025-66478)
+- Added `binaryTargets = ["native", "rhel-openssl-3.0.x"]` to Prisma schema for Linux/Vercel
+- Added `outputFileTracingIncludes` to `next.config.ts` so Prisma engine binary is bundled in serverless functions
+- Removed `serverActions.allowedOrigins: ["localhost:3000"]` from `next.config.ts` — was blocking production
+- **Root cause of login failure:** PowerShell `echo` pipes with UTF-16 BOM prepended to env var values; fixed by using bash `printf` to set Vercel env vars
+- `middleware.ts` deprecation warning (Next.js 16 renames it to `proxy.ts`) — app still works, to be fixed next session
+
+### Deployment notes (session 9)
+- Redeployed to production (`vercel --prod --yes`) after the AI Fairness Audit UI redesign below — live and verified at the URL above
+
+### Re-deploying
+```bash
+cd E:\ShiftScheduleApp
+vercel --prod --yes
+```
+Env vars (`DATABASE_URL`, `GROQ_API_KEY`) are stored in Vercel — no need to re-add.
 
 ---
 
@@ -25,15 +58,16 @@ All scheduling logic is implemented and unit-tested:
 - `AbsentEntry` interface: `{ empId, name?, originalShift }` — passed per-day into `coverAbsences`
 
 ### Database (`prisma/`) ✅
-- Schema: `Unit`, `Employee`, `LeaveRequest`, `ScheduleEntry`, `FeasibilityFlag`, `FinalizedSchedule`
+- Provider: **PostgreSQL** (migrated from SQLite in session 8)
+- Schema: `Unit`, `Employee`, `LeaveRequest`, `ScheduleEntry`, `FeasibilityFlag`, `FinalizedSchedule`, `User`, `Session`
 - `Employee` table has `cumulativeOffDays Int @default(0)` and `cumulative12hrCount`
-- Both fields are **written back** after every generate call (was a known gap — now fixed)
+- Both fields are **written back** after every generate call
 - `FinalizedSchedule` stores a full JSON snapshot (employees, cells, flags, tallies) per finalization
-- Migrations applied
+- Single consolidated migration (`20260625091632_init`)
 - Seed script at `prisma/seed.ts` — creates 12 refinery units (HCU, H2U, CDU, VDU, MSP, DCU, OM&S, ASPU, DHDT, SRB, SDU, WHFU) with Indian-name employee rosters and leave requests
 
 ### API routes (`app/api/`) ✅
-Full REST surface (19 route files):
+Full REST surface (23 route files):
 - Units CRUD
 - Employees CRUD (auto-assigns `seniorityIndex`)
 - Leave requests CRUD (with date-range filter)
@@ -46,6 +80,8 @@ Full REST surface (19 route files):
 - Finalized POST `{start, end, label?}` — snapshot current schedule entries + flags + tallies
 - Finalized/[id] GET — full snapshot JSON
 - Finalized/[id] DELETE — remove record
+- Auth: login / logout
+- Admin: users CRUD
 - **AI: Leave Impact** POST `{employeeId, startDate, endDate}` → risk assessment (Low/Medium/High)
 - **AI: Schedule Query** POST `{question, context}` → streaming plain-text answer
 - **AI: Fairness Audit** POST `{start, end}` → fairness analysis text
@@ -65,13 +101,25 @@ No `globalThis` caching — reads `GROQ_API_KEY` from env fresh on every module 
 |---|---|---|---|
 | 1 | **Leave Impact Analysis** | Leaves → Add Leave form | llama-3.3-70b-versatile |
 | 2 | **Schedule Query (chat)** | Schedule → below grid | llama-3.3-70b-versatile (streaming) |
-| 3 | **Fairness Audit** | Schedule → "✦ AI Audit" button | llama-3.3-70b-versatile |
+| 3 | **Fairness Audit** | Schedule → "✦ AI Audit" button | llama-3.3-70b-versatile (structured JSON) |
 | 4 | **Auto-label generator** | Schedule → Finalize modal | llama-3.1-8b-instant |
 | 5 | **Anomaly Detection** | Reports → "AI Pattern Insights" | llama-3.3-70b-versatile |
 
-Requires `GROQ_API_KEY` in `.env` (free key from console.groq.com — no credit card).
+Requires `GROQ_API_KEY` in Vercel env vars (production) or `.env` (local).
 All routes return 503 gracefully when key is absent.
 All routes have try/catch — return JSON `{error: "..."}` instead of crashing with 500 HTML.
+
+**Fairness Audit response format** (fixed in session 9):
+Previously returned free-form markdown (`{audit: string}`) that rendered with literal
+`**bold**` asterisks and numbered-list prefixes — looked raw and unpolished in the UI.
+Now returns structured JSON matching the Leave Impact pattern:
+```json
+{ "verdict": "Fair", "summary": "...", "hoursDistribution": "...", "nightBurden": "...",
+  "twelveHrDistribution": "...", "offDayFairness": "...", "action": "..." }
+```
+`ScheduleClient.tsx` renders this as a colored verdict badge (🟢 Fair / 🟡 Minor Issues /
+🔴 Unfair) + summary line, four labeled section cards, and a highlighted "Suggested Action"
+card — no raw markdown anywhere.
 
 **Schedule Query context format** (fixed in session 4):
 Previously formatted as employee rows with unlabelled date columns — AI couldn't map
@@ -122,50 +170,38 @@ All AI prompts use "refinery" context (not "hospital").
 
 ## Known issues / watch-outs
 
-### GROQ_API_KEY must be set for AI features
-Add `GROQ_API_KEY="gsk_..."` to `.env`. Free key from console.groq.com → API Keys —
-no credit card needed. All AI routes return HTTP 503 with a clear message if the key is
-missing — the rest of the app continues to work normally.
-Verify with: `GET http://localhost:3000/api/debug-ai`
+### middleware.ts deprecation warning
+Next.js 16 renames `middleware.ts` to `proxy.ts`. The app still works — the warning is cosmetic — but should be renamed in the next session to silence it.
 
-### DATABASE_URL must be absolute on Windows
-`file:./prisma/dev.db` fails silently with `SQLITE_CANTOPEN` in the Prisma JS client
-on Windows. The `.env` must use a full absolute path:
+### GROQ_API_KEY — Vercel env var encoding
+When adding env vars to Vercel via PowerShell `echo`, a BOM character (U+FEFF) gets prepended, corrupting the value. Always use bash `printf` to pipe values to `vercel env add`:
+```bash
+printf 'your-value' | vercel env add VAR_NAME production
 ```
-DATABASE_URL="file:E:/ShiftSchedule/prisma/dev.db"
-```
-See `.env.example`. If you move the repo, update `.env` accordingly.
 
 ### Must restart dev server after changing .env
-Next.js reads `.env` only at startup. Changing `GROQ_API_KEY` without restarting
-the server means the old key (or empty string) is still in `process.env`.
-`lib/ai.ts` has no globalThis cache, so a restart always picks up the latest key.
+Next.js reads `.env` only at startup.
 
 ### Authentication (plain-text passwords — intentional)
 Cookie-based session auth is implemented. Passwords are stored as plain text — this is by design (user requirement). Login: `admin / admin123` (all units). Per-unit users: `hcu / password`, `cdu / password`, etc.
 
 ### Manual override survives regeneration
-When "Generate Schedule" is clicked, the engine is given existing manual overrides
-as `existingCells` and re-applies them. Override cells are stored with
-`isManualOverride = true` in the DB. They are **not** wiped by regeneration.
+Override cells are stored with `isManualOverride = true` in the DB and are not wiped by regeneration.
 
 ### INFO flags only appear after regeneration
-Coverage notes (INFO flags) are computed during schedule generation and stored in
-`FeasibilityFlag`. Viewing an old schedule generated before this feature was added
-will not show blue notes — regenerate to get them.
+Coverage notes (INFO flags) are computed during schedule generation. Viewing old schedules won't show blue notes — regenerate to get them.
 
 ### Finalized snapshots are immutable point-in-time copies
-Regenerating or manually overriding the live schedule does not affect existing
-finalized records. A new "Finalize" is needed after any change to capture the update.
+Regenerating or manually overriding the live schedule does not affect existing finalized records.
 
 ### Anomaly Detection needs ≥2 finalized schedules
-The AI pattern analysis route returns HTTP 400 with a clear message if fewer than
-2 finalized schedules exist for the unit.
+The AI pattern analysis route returns HTTP 400 with a clear message if fewer than 2 finalized schedules exist for the unit.
 
 ---
 
 ## What is NOT built yet
 
+- [ ] Rename `middleware.ts` → `proxy.ts` for Next.js 16 (cosmetic warning only)
 - [ ] Multi-month schedule view / calendar
 - [ ] Competency-level constraints (field exists in DB, engine ignores it)
 - [ ] 12-hr fairness window (`twelveHrFairnessWindow` stored but not used by engine)
@@ -173,26 +209,24 @@ The AI pattern analysis route returns HTTP 400 with a clear message if fewer tha
 - [ ] Notes per schedule entry (field exists, not editable in UI)
 - [ ] Employee seniority reordering in UI (drag-and-drop)
 - [ ] Print-friendly / PDF schedule view
-- [x] Authentication / multi-user ✅ (done — see session 4)
+- [x] Authentication / multi-user ✅ (done — session 4)
+- [x] Deployment to Vercel ✅ (done — session 8)
 - [ ] Shift swap request workflow
 - [ ] Email / WhatsApp notifications when schedule is published
 
 ---
 
-## How to resume
+## How to resume (local development)
 
 > **Working directory:** `E:\ShiftScheduleApp`
-> The old `E:\ShiftSchedule` directory is an incomplete leftover from an earlier session and can be deleted.
 
 ```bash
 # 1. Clone from GitHub (if starting fresh)
 git clone https://github.com/DigantaKrborah/ShiftSchedule E:\ShiftScheduleApp
 
-# 2. Copy and edit .env
-cp .env.example .env
-# Edit .env:
-#   DATABASE_URL="file:E:/ShiftScheduleApp/prisma/dev.db"
-#   GROQ_API_KEY="gsk_..."   ← free from console.groq.com → API Keys
+# 2. Create .env
+# DATABASE_URL="postgresql://neondb_owner:...@...neon.tech/neondb?sslmode=require"
+# GROQ_API_KEY="gsk_..."
 
 # 3. Install dependencies
 npm install

@@ -1,23 +1,24 @@
 # Project Context — ShiftSchedule
 
 ## What this is
-A Next.js 15 (App Router) shift-scheduling web app backed by SQLite via Prisma 5.
+A Next.js 16 (App Router) shift-scheduling web app backed by PostgreSQL (Neon) via Prisma 5.
 The scheduling logic lives in a **pure TypeScript engine** with no DB or React deps.
 The app generates rotas for **refinery** units with rotating A/B/C shifts,
 leave coverage, 12-hr duty pairs, feasibility flags, and AI-powered insights.
+Deployed to production on Vercel — see `status.md` for the live URL and deployment history.
 
 ---
 
 ## Stack
 | Layer | Choice |
 |---|---|
-| Framework | Next.js 15.2.4 · App Router · React 19 |
-| Database | SQLite (Prisma 5.22.0) |
+| Framework | Next.js 16.2.9 · App Router · React 19 |
+| Database | PostgreSQL via Neon, free tier (Prisma 5.22.0) |
 | Styling | Tailwind CSS v3 (custom shift colours in `tailwind.config.ts`) |
 | AI | Groq (LLaMA models) via direct fetch to OpenAI-compatible API (`lib/ai.ts`) |
 | Testing | Vitest (engine-only tests in `lib/engine/__tests__/`) |
 | Export | `xlsx` package for Excel download |
-| Runtime | Node.js on Windows 11 |
+| Runtime | Node.js on Windows 11 (deploys to Vercel serverless functions in production) |
 
 ---
 
@@ -120,7 +121,9 @@ app/
                                   Model: llama-3.3-70b-versatile (AI_SMART)
         query/route.ts            POST {question, context} → streaming plain-text answer
                                   Model: llama-3.3-70b-versatile (AI_SMART)
-        fairness-audit/route.ts   POST {start, end} → {audit: string}
+        fairness-audit/route.ts   POST {start, end} → structured JSON: {verdict, summary,
+                                  hoursDistribution, nightBurden, twelveHrDistribution,
+                                  offDayFairness, action} (session 9 — was free-text markdown)
                                   Model: llama-3.3-70b-versatile (AI_SMART)
         schedule-summary/route.ts POST {start, end} → {summary: string}
                                   Model: llama-3.1-8b-instant (AI_FAST)
@@ -190,7 +193,7 @@ directly answer "who is on B shift on date X" without counting grid columns.
 |---|---|---|---|
 | Leave Impact | `ai/leave-impact` | Add Leave form | Risk badge + explanation before approving leave |
 | Schedule Query | `ai/query` | Ask AI chat panel | Streaming answer to natural-language schedule questions |
-| Fairness Audit | `ai/fairness-audit` | "✦ AI Audit" button | Analyses hour/night/12hr distribution across employees |
+| Fairness Audit | `ai/fairness-audit` | "✦ AI Audit" button | Structured JSON verdict + per-dimension cards on hour/night/12hr/off-day distribution (session 9 redesign — was free-text) |
 | Auto-label | `ai/schedule-summary` | Finalize modal | Generates a descriptive label for the finalized snapshot |
 | Anomaly Detection | `ai/anomalies` | Reports page | Detects patterns across ≥2 finalized schedule periods |
 
@@ -222,14 +225,14 @@ the SSR-provided value.
 
 ---
 
-## DATABASE_URL gotcha (Windows)
-Relative paths (e.g. `file:./prisma/dev.db`) do not work for the Prisma JS client
-inside Next.js on Windows. Use an absolute path in `.env`:
+## DATABASE_URL (PostgreSQL / Neon)
+Migrated from SQLite to PostgreSQL in session 8 for Vercel compatibility (the Prisma JS
+client can't open a local SQLite file inside a serverless function). `.env` now holds a
+Neon connection string:
 ```
-DATABASE_URL="file:E:/ShiftScheduleApp/prisma/dev.db"
+DATABASE_URL="postgresql://neondb_owner:...@...neon.tech/neondb?sslmode=require"
 ```
 The canonical working directory is `E:\ShiftScheduleApp` (cloned from GitHub).
-The old `E:\ShiftSchedule` directory is an incomplete leftover and should be deleted.
 
 ---
 
@@ -243,7 +246,7 @@ The old `E:\ShiftSchedule` directory is an incomplete leftover and should be del
 |---|---|
 | `npm run dev` | Start Next.js dev server on :3000 |
 | `npm run build` | Production build |
-| `npm run db:seed` | Wipe DB and insert 2 units + 19 employees + 6 leaves |
+| `npm run db:seed` | Wipe DB and insert 12 refinery units + ~112 employees + ~26 leaves + 13 login users |
 | `npm run db:migrate` | Run pending Prisma migrations |
 | `npm run db:generate` | Regenerate Prisma client after schema changes |
 | `npm run db:studio` | Open Prisma Studio (GUI for the DB) |
